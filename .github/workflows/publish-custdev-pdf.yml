@@ -1,0 +1,97 @@
+name: Publish CustDev PDF
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - custdev.html
+      - .github/workflows/publish-custdev-pdf.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-pdf:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout public website
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PDF renderer
+        run: python -m pip install --disable-pip-version-check weasyprint==68.0
+
+      - name: Create print-ready PDF from current guide
+        run: |
+          python - <<'PY'
+          from weasyprint import HTML, CSS
+          from pathlib import Path
+          style = r"""
+          @page { size: A4; margin: 16mm 16mm 17mm 16mm; }
+          @media print {
+            html, body { width: auto !important; max-width: none !important; overflow: visible !important; background: #fff !important; }
+            body { font-family: "DejaVu Sans", sans-serif !important; font-size: 9.3pt !important; line-height: 1.55 !important; }
+            .layout { display: block !important; width: 100% !important; min-height: 0 !important; }
+            .sidebar, .mobile, .top { display: none !important; }
+            .main { width: 100% !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }
+            .hero { border-radius: 12px !important; padding: 25px 29px !important; margin: 0 0 12px !important; background: #0e2141 !important; color: #fff !important; }
+            .hero::after { font-size: 135px !important; top: -14px !important; right: 6px !important; }
+            .hero h1 { font-size: 32pt !important; margin: 10px 0 !important; }
+            .hero p { font-size: 9pt !important; line-height: 1.5 !important; }
+            .tag { padding: 3px 7px !important; font-size: 7.5pt !important; }
+            .stats { display: grid !important; grid-template-columns: repeat(3, minmax(0,1fr)) !important; gap: 8px !important; margin: 0 !important; }
+            .stat { padding: 10px 12px !important; box-shadow: none !important; }
+            .stat strong { font-size: 18pt !important; }
+            .stat span { font-size: 7.5pt !important; }
+            section { margin: 21px 0 28px !important; }
+            h2 { font-size: 19pt !important; margin: 0 0 12px !important; }
+            h3 { font-size: 11pt !important; }
+            .lead { font-size: 9pt !important; }
+            .card, .note { padding: 12px 16px !important; margin: 10px 0 !important; }
+            .card h3 { margin: 0 0 5px !important; }
+            .card p { font-size: 9pt !important; margin: 0 0 7px !important; }
+            .tablebox { margin: 10px 0 !important; }
+            .tablebox th, .tablebox td { padding: 7px 10px !important; }
+            .group { margin: 18px 0 22px !important; }
+            .group-title { margin-bottom: 7px !important; }
+            .group-title h3 { font-size: 11pt !important; margin: 0 !important; }
+            .group-title p { font-size: 7.5pt !important; }
+            .letter { width: 28px !important; height: 28px !important; }
+            .question { padding: 9px 12px !important; border-bottom: 1px solid #e4eaf2 !important; }
+            .qtext { font-size: 9pt !important; line-height: 1.48 !important; }
+            .hint { font-size: 7.5pt !important; margin-top: 3px !important; }
+            .qnum { font-size: 8.5pt !important; }
+            .why { padding: 11px 15px !important; margin: 9px 0 !important; }
+            .why ol { margin: 7px 0 !important; font-size: 8pt !important; }
+            .why li { margin-bottom: 2px !important; }
+            .minor { font-size: 7.3pt !important; }
+            details { display: block !important; }
+            summary { padding: 13px 14px !important; }
+            details > :not(summary) { display: flex !important; }
+            .footer { margin-top: 15px !important; font-size: 7pt !important; }
+            .question, .stat, .card, .group-title, .why, .tablebox tr, .note { break-inside: avoid !important; }
+            .group-title { break-after: avoid !important; }
+          }
+          """
+          HTML(filename="custdev.html", base_url=".").write_pdf("custdev.pdf", stylesheets=[CSS(string=style)])
+          output = Path("custdev.pdf")
+          assert output.exists() and output.stat().st_size > 10000, "PDF generation failed"
+          print(f"Created {output}: {output.stat().st_size} bytes")
+          PY
+
+      - name: Commit public PDF to GitHub Pages
+        run: |
+          if [ -n "$(git status --porcelain -- custdev.pdf)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add custdev.pdf
+            git commit -m "Publish printable CustDev PDF"
+            git push
+          else
+            echo "PDF is already up to date"
+          fi
